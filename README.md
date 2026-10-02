@@ -9,13 +9,57 @@ It records:
 
 It's free, has no account or sign-up, and nothing is uploaded. Recordings are saved straight to your computer.
 
-## Install (one time)
+## Requirements
 
-1. Download this repo: **Code → Download ZIP**. Unzip it somewhere permanent, for example `Documents\meet-recorder`. Don't delete the folder later, because Chrome loads the extension from it.
-2. Open `chrome://extensions` (in Edge: `edge://extensions`).
-3. Turn on **Developer mode** with the switch in the top-right corner.
-4. Click **Load unpacked** and select the `extension` folder inside `meet-recorder`.
-5. Open or refresh your Google Meet tab.
+- Windows, Mac or Linux
+- Google Chrome or Microsoft Edge, recent version
+- Optional: ffmpeg, only needed to fix silent audio in Windows' player (see below)
+
+## Setup (one time, about 2 minutes)
+
+### Step 1: Download
+
+**Option A, no git:**
+1. On this GitHub page, click the green **Code** button, then **Download ZIP**.
+2. Right-click the downloaded ZIP and choose **Extract All**.
+3. Move the extracted folder somewhere permanent, for example `Documents\meet-recorder`.
+
+**Option B, with git:**
+```bash
+git clone https://github.com/rahulsaw13/meet-recorder.git
+```
+
+Keep this folder. Chrome loads the extension from it, so deleting or moving it removes the extension.
+
+### Step 2: Add the extension to Chrome
+
+1. In the address bar, type `chrome://extensions` and press Enter. In Edge, use `edge://extensions`.
+2. Turn on **Developer mode**. In Chrome it's a switch in the top-right corner. In Edge it's in the left sidebar.
+3. Click **Load unpacked**.
+4. Open the `meet-recorder` folder, select the **`extension`** folder inside it, and click **Select Folder**.
+5. **Meet Recorder** now appears in the list. Make sure its switch is on.
+6. Optional: click the puzzle-piece icon in the toolbar, then the pin next to Meet Recorder.
+
+### Step 3: Check it works
+
+1. Open or refresh a Google Meet call. Pages that were already open must be refreshed.
+2. A small dark recorder bar should appear in the bottom-left corner of the Meet page.
+3. If it doesn't appear, see [Troubleshooting](#troubleshooting).
+
+### Step 4 (Windows, optional): Install ffmpeg
+
+You need ffmpeg only if recordings play without sound in Windows Media Player.
+1. Open PowerShell and run:
+   ```powershell
+   winget install Gyan.FFmpeg
+   ```
+2. Close PowerShell and open it again.
+
+### Updating to a new version
+
+1. Download the new files into the same folder, or run `git pull` in it.
+2. Go to `chrome://extensions` and click **⟳** (reload) on Meet Recorder.
+3. Refresh your Meet tab.
 
 ## Record
 
@@ -43,6 +87,28 @@ Some Chrome versions save the audio in a format (Opus) that Windows' built-in pl
 ## Standalone recorder (any app, not only Meet)
 
 Double-click **`Start Meet Recorder.cmd`**. It opens `meet-recorder.html` in Chrome, which records your screen, system audio and mic, and can also record the webcam to a separate file.
+
+## Troubleshooting
+
+**The recorder bar doesn't appear in Meet**
+- Refresh the Meet tab with F5.
+- Go to `chrome://extensions` and check that Meet Recorder is turned on and has no **Errors** button.
+- The bar shows only on `meet.google.com`.
+
+**"No meeting audio" warning, or the Meet bar doesn't move**
+- In Chrome's share dialog, **"Also share tab audio"** must be on. For "Whole screen", tick **"Also share system audio"**.
+- If the warning still shows, the extension takes the audio straight from Meet's own players instead.
+- If you're alone in the call, nobody else is talking, so the bar stays empty. Join from your phone to test.
+
+**My own voice is missing**
+- Keep **Mic** ticked before you click Record.
+- Make sure Meet itself has mic permission. Click the lock icon in the address bar, then **Microphone → Allow**.
+
+**The recording plays without sound**
+- See [No sound in Windows Media Player?](#no-sound-in-windows-media-player)
+
+**Chrome shows "Disable developer mode extensions" at startup**
+- This warning is normal for extensions loaded with **Load unpacked**. Click **✕** (keep the extension), not Disable.
 
 ## Note
 
