@@ -1,5 +1,11 @@
 # Converts Opus audio in MP4 recordings to AAC so Windows Media Player / Films & TV can play it.
 # Video is copied untouched (fast). Originals are moved to <folder>\original-opus\.
+#
+# HOW TO USE
+#   Easiest:  double-click "Fix Recordings Audio.cmd"   (fixes your Videos folder)
+#   Other folder:
+#     powershell -ExecutionPolicy Bypass -File fix-audio.ps1 -Folder "D:\Recordings"
+#   Needs ffmpeg:  winget install Gyan.FFmpeg
 param([string]$Folder = "$env:USERPROFILE\Videos")
 
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {

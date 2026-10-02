@@ -15,6 +15,18 @@ It's free, has no account or sign-up, and nothing is uploaded. Recordings are sa
 - Google Chrome or Microsoft Edge, recent version
 - Optional: ffmpeg, only needed to fix silent audio in Windows' player (see below)
 
+## Quick setup (Windows)
+
+1. Download and unzip this repo (see Step 1 below).
+2. Double-click **`Setup.cmd`**. It:
+   - opens the Chrome extensions page
+   - copies the extension folder path for you
+   - shows exactly what to click
+   - offers to install ffmpeg
+   - prints how to record
+
+To do it by hand, or on Mac or Linux, follow the steps below.
+
 ## Setup (one time, about 2 minutes)
 
 ### Step 1: Download

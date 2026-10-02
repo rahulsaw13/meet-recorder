@@ -1,5 +1,11 @@
 // Meet Recorder: floating Record button injected into Google Meet.
 // Captures the Meet tab (or whole screen) + tab/system audio + your mic, mixed into one file.
+//
+// HOW TO USE
+//   Install: run Setup.cmd, or chrome://extensions > Developer mode > Load unpacked > this folder.
+//   Record:  open or refresh Google Meet, then use the bar at the bottom-left:
+//            pick "This Meet tab" or "Whole screen", keep Mic ticked, click Record,
+//            choose a save location, keep "Also share tab audio" ON, and click Stop when done.
 (() => {
   if (window.__meetRecorderLoaded) return;
   window.__meetRecorderLoaded = true;
