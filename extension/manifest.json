@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Meet Recorder",
+  "version": "1.0.0",
+  "description": "Adds a Record button to Google Meet. Records the meeting video, everyone's audio and your mic.",
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meet Recorder</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --text:#e8eaf0; --muted:#9aa1b2; --accent:#e5484d; --ok:#30a46c; --border:#2a2f3a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui, Segoe UI, sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:24px 16px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:flex; align-items:center; gap:8px; margin:6px 0; }
+  select { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:4px 6px; max-width:100%; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  button { font:inherit; border:0; border-radius:8px; padding:10px 18px; cursor:pointer; color:#fff; background:#3b4252; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  #startBtn { background:var(--accent); font-weight:600; }
+  #timer { font:600 28px/1 ui-monospace, Consolas, monospace; margin-left:auto; }
+  .dot { width:12px; height:12px; border-radius:50%; background:var(--muted); display:inline-block; }
+  .rec .dot { background:var(--accent); animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:.2; } }
+  video { width:100%; border-radius:8px; background:#000; margin-top:12px; display:none; }
+  #log { color:var(--muted); font-size:13px; white-space:pre-wrap; margin:0; }
+  .warn { color:#f5a524; }
+  .good { color:var(--ok); }
+  ol { margin:0; padding-left:20px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Meet Recorder</h1>
+  <p class="sub">Records the screen, system audio (other people) and your mic into one file.</p>
+
+  <div class="card">
+    <label><input type="checkbox" id="useMic" checked> Record my microphone</label>
+    <label style="padding-left:26px">Mic: <select id="micSelect"></select></label>
+    <label><input type="checkbox" id="useCam"> Also record webcam to a separate file</label>
+    <label style="padding-left:26px">Camera: <select id="camSelect"></select></label>
+    <label><input type="checkbox" id="saveToFolder" checked> Write straight to a folder while recording (crash-safe)</label>
+  </div>
+
+  <div class="card" id="controls">
+    <div class="row">
+      <span class="dot"></span>
+      <button id="startBtn">Start recording</button>
+      <button id="pauseBtn" disabled>Pause</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <span id="timer">00:00:00</span>
+    </div>
+    <video id="preview" muted playsinline></video>
+  </div>
+
+  <div class="card">
+    <pre id="log">Ready.</pre>
+  </div>
+
+  <div class="card">
+    <ol>
+      <li>Click <b>Start recording</b>.</li>
+      <li>In the share dialog choose <b>Entire screen</b> and tick <b>"Also share system audio"</b>. Without it, other people's voices are not recorded.</li>
+      <li>Switch to Meet. Recording keeps going in the background.</li>
+      <li>Come back and click <b>Stop</b>, or use Chrome's "Stop sharing" bar.</li>
+    </ol>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+const log = (msg, cls) => {
+  const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  logEl.innerHTML += '\n' + (cls ? `<span class="${cls}">${line}</span>` : line);
+};
+
+// AAC first: Windows Media Player / Films & TV play MP4+Opus as silent video
+const MIME_CANDIDATES = [
+  'video/mp4;codecs=avc1.640028,mp4a.40.2',
+  'video/mp4;codecs=avc1,mp4a.40.2',
+  'video/mp4;codecs=avc1.640028,opus',
+  'video/mp4;codecs=avc1,opus',
+  'video/mp4',
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
+  'video/webm'
+];
+const pickMime = () => MIME_CANDIDATES.find(m => MediaRecorder.isTypeSupported(m)) || '';
+const extFor = mime => mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+
+let displayStream, micStream, camStream, audioCtx;
+let recorders = [];
+let timerId, elapsed = 0, lastTick = 0;
+
+async function listDevices() {
+  try {
+    // Device labels only appear after a permission grant
+    const tmp = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(() =>
+      navigator.mediaDevices.getUserMedia({ audio: true }));
+    tmp.getTracks().forEach(t => t.stop());
+  } catch (e) { log('Mic/camera permission not granted yet: ' + e.message, 'warn'); }
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const fill = (sel, kind) => {
+    sel.innerHTML = '';
+    devices.filter(d => d.kind === kind).forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.deviceId; o.textContent = d.label || kind;
+      sel.appendChild(o);
+    });
+  };
+  fill($('micSelect'), 'audioinput');
+  fill($('camSelect'), 'videoinput');
+}
+
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+// Writes chunks to a file on disk as they arrive, or keeps them in memory and downloads at the end
+async function makeSink(dirHandle, name) {
+  if (dirHandle) {
+    const fh = await dirHandle.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    let chain = Promise.resolve();
+    return {
+      write: blob => { chain = chain.then(() => w.write(blob)); },
+      close: () => chain.then(() => w.close()).then(() => log(`Saved ${name} to the chosen folder.`, 'good'))
+    };
+  }
+  const chunks = [];
+  return {
+    write: blob => chunks.push(blob),
+    close: async () => {
+      const url = URL.createObjectURL(new Blob(chunks, { type: chunks[0]?.type }));
+      const a = Object.assign(document.createElement('a'), { href: url, download: name });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      log(`Downloaded ${name}.`, 'good');
+    }
+  };
+}
+
+function startRecorder(stream, sink, mime, bitrate) {
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrate, audioBitsPerSecond: 128000 });
+  rec.ondataavailable = e => { if (e.data.size) sink.write(e.data); };
+  rec.done = new Promise(res => { rec.onstop = () => sink.close().then(res); });
+  rec.start(1000);
+  return rec;
+}
+
+async function start() {
+  $('startBtn').disabled = true;
+  // Create + resume the mixer inside the click so it isn't left suspended (silent) after the dialogs
+  audioCtx = new AudioContext();
+  audioCtx.resume();
+  try {
+    let dirHandle = null;
+    if ($('saveToFolder').checked) {
+      if (window.showDirectoryPicker) {
+        dirHandle = await window.showDirectoryPicker({ id: 'meet-recorder', mode: 'readwrite', startIn: 'videos' });
+      } else {
+        log('Folder saving is not supported in this browser. The file will download when you stop.', 'warn');
+      }
+    }
+
+    displayStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 30, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
+      systemAudio: 'include',
+      selfBrowserSurface: 'exclude',
+      monitorTypeSurfaces: 'include'
+    });
+
+    const sysAudio = displayStream.getAudioTracks();
+    if (!sysAudio.length) log('No system audio captured. Other people\'s voices will be missing. Stop, start again and tick "Also share system audio".', 'warn');
+    else log('System audio: captured.', 'good');
+
+    if (audioCtx.state !== 'running') await audioCtx.resume();
+    log('Audio engine: ' + audioCtx.state);
+    const dest = audioCtx.createMediaStreamDestination();
+    if (sysAudio.length) audioCtx.createMediaStreamSource(new MediaStream(sysAudio)).connect(dest);
+
+    if ($('useMic').checked) {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: $('micSelect').value ? { exact: $('micSelect').value } : undefined, echoCancellation: true, noiseSuppression: true }
+      });
+      audioCtx.createMediaStreamSource(micStream).connect(dest);
+      log('Microphone: captured (' + micStream.getAudioTracks()[0].label + ').', 'good');
+    }
+
+    const mainStream = new MediaStream([...displayStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const mime = pickMime();
+    const ext = extFor(mime);
+    const base = 'meet_' + stamp();
+    log(`Format: ${mime || 'browser default'}`);
+
+    recorders = [startRecorder(mainStream, await makeSink(dirHandle, `${base}.${ext}`), mime, 4_000_000)];
+
+    if ($('useCam').checked) {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: $('camSelect').value ? { exact: $('camSelect').value } : undefined, width: 1280, height: 720 }
+      });
+      recorders.push(startRecorder(camStream, await makeSink(dirHandle, `${base}_webcam.${ext}`), mime, 2_000_000));
+      log('Webcam: recording to a separate file.', 'good');
+    }
+
+    // Chrome's "Stop sharing" button ends the video track
+    displayStream.getVideoTracks()[0].addEventListener('ended', stop);
+
+    const pv = $('preview');
+    pv.srcObject = displayStream; pv.style.display = 'block'; pv.play();
+
+    document.title = '● REC · Meet Recorder';
+    $('controls').classList.add('rec');
+    $('pauseBtn').disabled = false; $('stopBtn').disabled = false;
+    elapsed = 0; lastTick = Date.now();
+    timerId = setInterval(tick, 500);
+    log('Recording started.', 'good');
+  } catch (e) {
+    log('Could not start: ' + e.message, 'warn');
+    cleanup();
+    $('startBtn').disabled = false;
+  }
+}
+
+function tick() {
+  const now = Date.now();
+  if (recorders[0]?.state === 'recording') elapsed += now - lastTick;
+  lastTick = now;
+  const s = Math.floor(elapsed / 1000), p = n => String(n).padStart(2, '0');
+  $('timer').textContent = `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`;
+}
+
+function togglePause() {
+  const paused = recorders[0].state === 'paused';
+  recorders.forEach(r => paused ? r.resume() : r.pause());
+  $('pauseBtn').textContent = paused ? 'Pause' : 'Resume';
+  $('controls').classList.toggle('rec', paused);
+  document.title = (paused ? '● REC' : '❚❚ Paused') + ' · Meet Recorder';
+  log(paused ? 'Resumed.' : 'Paused.');
+}
+
+async function stop() {
+  if (!recorders.length) return;
+  $('stopBtn').disabled = true; $('pauseBtn').disabled = true;
+  const active = recorders; recorders = [];
+  active.forEach(r => r.state !== 'inactive' && r.stop());
+  clearInterval(timerId);
+  log('Stopping, finishing the files...');
+  await Promise.all(active.map(r => r.done));
+  cleanup();
+  $('startBtn').disabled = false;
+  $('pauseBtn').textContent = 'Pause';
+}
+
+function cleanup() {
+  [displayStream, micStream, camStream].forEach(s => s?.getTracks().forEach(t => t.stop()));
+  displayStream = micStream = camStream = null;
+  audioCtx?.close(); audioCtx = null;
+  $('preview').style.display = 'none';
+  $('controls').classList.remove('rec');
+  document.title = 'Meet Recorder';
+}
+
+window.addEventListener('beforeunload', e => { if (recorders.length) { e.preventDefault(); e.returnValue = ''; } });
+$('startBtn').onclick = start;
+$('pauseBtn').onclick = togglePause;
+$('stopBtn').onclick = stop;
+
+if (!navigator.mediaDevices?.getDisplayMedia) log('This browser cannot record the screen. Use Chrome or Edge.', 'warn');
+else listDevices();
+</script>
+</body>
+</html>
